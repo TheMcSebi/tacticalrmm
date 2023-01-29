@@ -169,6 +169,7 @@ class GetUpdateDeleteUser(APIView):
 
 class UserActions(APIView):
     permission_classes = [IsAuthenticated, AccountsPerms]
+
     # reset password
     def post(self, request):
         user = get_object_or_404(User, pk=request.data["id"])
@@ -267,7 +268,7 @@ class GetAddAPIKeys(APIView):
         request.data["key"] = get_random_string(length=32).upper()
         serializer = APIKeySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        obj = serializer.save()
+        serializer.save()
         return Response("The API Key was added")
 
 
@@ -290,3 +291,23 @@ class GetUpdateDeleteAPIKey(APIView):
         apikey = get_object_or_404(APIKey, pk=pk)
         apikey.delete()
         return Response("The API Key was deleted")
+
+
+class ResetPass(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        user = request.user
+        user.set_password(request.data["password"])
+        user.save()
+        return Response("Password was reset.")
+
+
+class Reset2FA(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        user = request.user
+        user.totp_key = ""
+        user.save()
+        return Response("2FA was reset. Log out and back in to setup.")

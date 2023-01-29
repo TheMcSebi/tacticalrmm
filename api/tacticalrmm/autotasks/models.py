@@ -1,6 +1,7 @@
 import asyncio
 import random
 import string
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import pytz
@@ -70,7 +71,7 @@ class AutomatedTask(BaseAuditModel):
         on_delete=models.SET_NULL,
     )
 
-    # format -> [{"type": "script", "script": 1, "name": "Script Name", "timeout": 90, "script_args": []}, {"type": "cmd", "command": "whoami", "timeout": 90}]
+    # format -> [{"type": "script", "script": 1, "name": "Script Name", "timeout": 90, "script_args": [], "env_vars": []}, {"type": "cmd", "command": "whoami", "timeout": 90}]
     actions = JSONField(default=list)
     assigned_check = models.ForeignKey(
         "checks.Check",
@@ -225,15 +226,13 @@ class AutomatedTask(BaseAuditModel):
     def create_policy_task(
         self, policy: "Policy", assigned_check: "Optional[Check]" = None
     ) -> None:
-        ### Copies certain properties on this task (self) to a new task and sets it to the supplied Policy
-        fields_to_copy = POLICY_TASK_FIELDS_TO_COPY
-
+        # Copies certain properties on this task (self) to a new task and sets it to the supplied Policy
         task = AutomatedTask.objects.create(
             policy=policy,
             assigned_check=assigned_check,
         )
 
-        for field in fields_to_copy:
+        for field in POLICY_TASK_FIELDS_TO_COPY:
             setattr(task, field, getattr(self, field))
 
         task.save()
@@ -251,9 +250,7 @@ class AutomatedTask(BaseAuditModel):
             "trigger": self.task_type
             if self.task_type != TaskType.CHECK_FAILURE
             else TaskType.MANUAL,
-            "multiple_instances": self.task_instance_policy
-            if self.task_instance_policy
-            else 0,
+            "multiple_instances": self.task_instance_policy or 0,
             "delete_expired_task_after": self.remove_if_not_scheduled
             if self.expire_date
             else False,
@@ -262,13 +259,13 @@ class AutomatedTask(BaseAuditModel):
             else True,
         }
 
-        if self.task_type in [
+        if self.task_type in (
             TaskType.RUN_ONCE,
             TaskType.DAILY,
             TaskType.WEEKLY,
             TaskType.MONTHLY,
             TaskType.MONTHLY_DOW,
-        ]:
+        ):
             # set runonce task in future if creating and run_asap_after_missed is set
             if (
                 not editing
@@ -432,10 +429,8 @@ class AutomatedTask(BaseAuditModel):
         if r != "ok" and "The system cannot find the file specified" not in r:
             task_result.sync_status = TaskSyncStatus.PENDING_DELETION
 
-            try:
+            with suppress(DatabaseError):
                 task_result.save(update_fields=["sync_status"])
-            except DatabaseError:
-                pass
 
             DebugLog.warning(
                 agent=agent,
